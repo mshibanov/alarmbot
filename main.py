@@ -16,36 +16,67 @@ AUTO_START, CONTROL, GPS, PHONE = range(4)
 # Функция для сопоставления ответов и рекомендаций
 def recommend_systems(answers):
     systems = [
-        {"name": "Pandora DX-40R", "autostart": 0, "brelok": 1, "gsm": 0, "gps": 0,
+        # Pandora системы
+        {"name": "Pandora DX-40R", "brand": "pandora", "autostart": 0, "brelok": 1, "gsm": 0, "gps": 0,
          "link": "https://ya7auto.ru/auto-security/car-alarms/pandora-dx-40r/"},
-        {"name": "Pandora DX-40RS", "autostart": 1, "brelok": 1, "gsm": 0, "gps": 0,
+        {"name": "Pandora DX-40RS", "brand": "pandora", "autostart": 1, "brelok": 1, "gsm": 0, "gps": 0,
          "link": "https://ya7auto.ru/auto-security/car-alarms/pandora-dx-40rs/"},
-        {"name": "PanDECT X-1800L v4 Light", "autostart": 1, "brelok": 0, "gsm": 1, "gps": 0,
+        {"name": "PanDECT X-1800L v4 Light", "brand": "pandora", "autostart": 1, "brelok": 0, "gsm": 1, "gps": 0,
          "link": "https://ya7auto.ru/auto-security/car-alarms/pandect-x-1800l-v4-light/"},
-        {"name": "Pandora VX 4G Light", "autostart": 1, "brelok": 0, "gsm": 1, "gps": 0,
+        {"name": "Pandora VX 4G Light", "brand": "pandora", "autostart": 1, "brelok": 0, "gsm": 1, "gps": 0,
          "link": "https://ya7auto.ru/auto-security/car-alarms/pandora-vx-4g-light/"},
-        {"name": "Pandora VX-4G GPS v2", "autostart": 1, "brelok": 0, "gsm": 1, "gps": 1,
+        {"name": "Pandora VX-4G GPS v2", "brand": "pandora", "autostart": 1, "brelok": 0, "gsm": 1, "gps": 1,
          "link": "https://ya7auto.ru/auto-security/car-alarms/pandora-vx-4g-gps-v2/"},
-        {"name": "Pandora VX 3100", "autostart": 1, "brelok": 1, "gsm": 1, "gps": 1,
+        {"name": "Pandora VX 3100", "brand": "pandora", "autostart": 1, "brelok": 1, "gsm": 1, "gps": 1,
          "link": "https://ya7auto.ru/auto-security/car-alarms/pandora-vx-3100/"},
-        {"name": "StarLine A63 v2 ECO", "autostart": 0, "brelok": 1, "gsm": 0, "gps": 0,
+
+        # Starline системы
+        {"name": "StarLine A63 v2 ECO", "brand": "starline", "autostart": 0, "brelok": 1, "gsm": 0, "gps": 0,
          "link": "https://ya7auto.ru/auto-security/car-alarms/starline-a63-v2-eco/"},
-        {"name": "StarLine А93 v2 ECO", "autostart": 1, "brelok": 1, "gsm": 0, "gps": 0,
+        {"name": "StarLine А93 v2 ECO", "brand": "starline", "autostart": 1, "brelok": 1, "gsm": 0, "gps": 0,
          "link": "https://ya7auto.ru/auto-security/car-alarms/starline-a93-v2-eco/"},
-        {"name": "StarLine S96 v2 ECO", "autostart": 1, "brelok": 0, "gsm": 1, "gps": 0,
+        {"name": "StarLine S96 v2 ECO", "brand": "starline", "autostart": 1, "brelok": 0, "gsm": 1, "gps": 0,
          "link": "https://ya7auto.ru/auto-security/car-alarms/starline-s96-v2-eco/"},
-        {"name": "StarLine S96 V2 LTE GPS", "autostart": 1, "brelok": 0, "gsm": 1, "gps": 1,
+        {"name": "StarLine S96 V2 LTE GPS", "brand": "starline", "autostart": 1, "brelok": 0, "gsm": 1, "gps": 1,
          "link": "https://ya7auto.ru/auto-security/car-alarms/starline-s96-v2-lte-gps/"}
     ]
 
-    matched_systems = []
+    # Ищем идеально подходящие системы
+    perfect_matches = []
     for system in systems:
         if (system['autostart'] == answers.get('autostart') and
                 (system['brelok'] == answers.get('control') or system['gsm'] == answers.get('control')) and
                 system['gps'] == answers.get('gps')):
-            matched_systems.append(system)
+            perfect_matches.append(system)
 
-    return matched_systems[:2]
+    # Если нашли 2-3 идеальных совпадения - возвращаем их
+    if len(perfect_matches) >= 2:
+        return perfect_matches[:3]
+
+    # Если идеальных совпадений мало, добавляем дополнительные варианты
+    matched_systems = perfect_matches.copy()
+
+    # Добавляем хотя бы одну Pandora
+    pandora_systems = [s for s in systems if s['brand'] == 'pandora' and s not in matched_systems]
+    if pandora_systems and not any(s['brand'] == 'pandora' for s in matched_systems):
+        matched_systems.append(pandora_systems[0])
+
+    # Добавляем хотя бы одну Starline
+    starline_systems = [s for s in systems if s['brand'] == 'starline' and s not in matched_systems]
+    if starline_systems and not any(s['brand'] == 'starline' for s in matched_systems):
+        matched_systems.append(starline_systems[0])
+
+    # Если все еще мало вариантов, добавляем самые популярные
+    if len(matched_systems) < 2:
+        # Популярные модели для дополнения
+        popular_systems = [
+            s for s in systems if s['name'] in ['Pandora DX-40RS', 'StarLine А93 v2 ECO', 'StarLine S96 v2 ECO']
+                                  and s not in matched_systems
+        ]
+        while len(matched_systems) < 3 and popular_systems:
+            matched_systems.append(popular_systems.pop(0))
+
+    return matched_systems[:3]  # Возвращаем максимум 3 варианта
 
 
 def start(update: Update, context: CallbackContext) -> int:
@@ -126,10 +157,17 @@ def gps_choice(update: Update, context: CallbackContext) -> int:
         context.user_data['user_answers']['gps'] = 0
 
     recommended = recommend_systems(context.user_data['user_answers'])
+
+    if not recommended:
+        update.message.reply_text(
+            "К сожалению, не удалось подобрать подходящие системы. Пожалуйста, свяжитесь с нашим менеджером для консультации.")
+        return PHONE
+
     recommendation_text = "🔍 Исходя из ваших ответов, я рекомендую рассмотреть следующие системы:\n\n"
 
     for system in recommended:
-        recommendation_text += f"• <b>{system['name']}</b>\nСсылка: {system['link']}\n\n"
+        brand_icon = "🐼" if system['brand'] == 'pandora' else "⭐"
+        recommendation_text += f"{brand_icon} <b>{system['name']}</b>\nСсылка: {system['link']}\n\n"
 
     # Сообщение после показа вариантов сигнализаций
     recommendation_text += (
