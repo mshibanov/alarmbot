@@ -1,7 +1,7 @@
 import logging
 import os
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
-from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, ConversationHandler, filters
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, ConversationHandler, CallbackContext
 import requests
 
 # Настройка логирования
@@ -58,16 +58,15 @@ def recommend_systems(answers):
     return matched_systems[:2]
 
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+def start(update: Update, context: CallbackContext) -> int:
     user = update.message.from_user
     context.user_data['user_name'] = user.first_name or user.username
     context.user_data['user_answers'] = {}
 
-    await update.message.reply_text(
-        f"👋🏻 Привет, {user.first_name}!\n\nЯ помогу тебе выбрать систему на твой автомобиль!")
-    await update.message.reply_text("🦾 Давай определимся с тем, что должна уметь ваша сигнализации")
-    await update.message.reply_text("1️⃣ Нужен ли вам автозапуск?")
-    await update.message.reply_text(
+    update.message.reply_text(f"👋🏻 Привет, {user.first_name}!\n\nЯ помогу тебе выбрать систему на твой автомобиль!")
+    update.message.reply_text("🦾 Давай определимся с тем, что должна уметь ваша сигнализации")
+    update.message.reply_text("1️⃣ Нужен ли вам автозапуск?")
+    update.message.reply_text(
         "🥶 В условиях нашего климата необходимо прогревать двигатель перед поездкой... Какую систему выберете?",
         reply_markup=ReplyKeyboardMarkup(
             [["С Автозапуском", "БЕЗ Автозапуском"]],
@@ -78,15 +77,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return AUTO_START
 
 
-async def autostart_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+def autostart_choice(update: Update, context: CallbackContext) -> int:
     text = update.message.text
     if text == "С Автозапуском":
         context.user_data['user_answers']['autostart'] = 1
     else:
         context.user_data['user_answers']['autostart'] = 0
 
-    await update.message.reply_text("2️⃣ Как вы планируете управлять системой? Брелок или GSM-модуль")
-    await update.message.reply_text(
+    update.message.reply_text("2️⃣ Как вы планируете управлять системой? Брелок или GSM-модуль")
+    update.message.reply_text(
         "🙄 Существует устаревший способ управления системы через брелок... Что выберете?",
         reply_markup=ReplyKeyboardMarkup(
             [["😎Приложение в телефоне", "📺Брелок"]],
@@ -97,15 +96,15 @@ async def autostart_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     return CONTROL
 
 
-async def control_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+def control_choice(update: Update, context: CallbackContext) -> int:
     text = update.message.text
     if text == "😎Приложение в телефоне":
         context.user_data['user_answers']['control'] = 1
     else:
         context.user_data['user_answers']['control'] = 0
 
-    await update.message.reply_text("🔥Отлично, остался последний вопрос! 3️⃣ GPS- антенна")
-    await update.message.reply_text(
+    update.message.reply_text("🔥Отлично, остался последний вопрос! 3️⃣ GPS- антенна")
+    update.message.reply_text(
         "Если вы часто даете машину чужие руки и вам важно отслеживать... Ваш вариант?",
         reply_markup=ReplyKeyboardMarkup(
             [["😎 С GPS- антенны", "📺БЕЗ GPS- антенны"]],
@@ -116,7 +115,7 @@ async def control_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     return GPS
 
 
-async def gps_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+def gps_choice(update: Update, context: CallbackContext) -> int:
     text = update.message.text
     if text == "😎 С GPS- антенны":
         context.user_data['user_answers']['gps'] = 1
@@ -139,8 +138,8 @@ async def gps_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
     context.user_data['bot_data'] = ", ".join([sys['name'] for sys in recommended])
 
-    await update.message.reply_text(recommendation_text, parse_mode='HTML', disable_web_page_preview=True)
-    await update.message.reply_text(
+    update.message.reply_text(recommendation_text, parse_mode='HTML', disable_web_page_preview=True)
+    update.message.reply_text(
         "Пожалуйста, поделитесь вашим номером телефона:",
         reply_markup=ReplyKeyboardMarkup(
             [[KeyboardButton("📞 Отправить мой номер", request_contact=True)]],
@@ -151,7 +150,7 @@ async def gps_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return PHONE
 
 
-async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+def get_phone(update: Update, context: CallbackContext) -> int:
     if update.message.contact:
         phone_number = update.message.contact.phone_number
     else:
@@ -166,46 +165,55 @@ async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
         response = requests.post(WEBFORM_URL, data=form_data)
         if response.status_code == 200:
-            await update.message.reply_text(
+            update.message.reply_text(
                 "✅ Спасибо! Ваш номер и данные получены. Наш менеджер свяжется с вами!",
                 reply_markup=ReplyKeyboardMarkup([[]], resize_keyboard=True)
             )
         else:
             logger.error(f"Ошибка при отправке формы: {response.status_code}")
-            await update.message.reply_text("✅ Спасибо! Ваши данные приняты. Мы свяжемся с вами скоро.")
+            update.message.reply_text("✅ Спасибо! Ваши данные приняты. Мы свяжемся с вами скоро.")
     except Exception as e:
         logger.error(f"Исключение при отправке формы: {e}")
-        await update.message.reply_text("✅ Спасибо! Ваш номер принят. Мы свяжемся с вами скоро.")
+        update.message.reply_text("✅ Спасибо! Ваш номер принят. Мы свяжемся с вами скоро.")
 
     context.user_data.clear()
     return ConversationHandler.END
 
 
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text('Диалог прерван. Чтобы начать заново, отправьте /start')
+def cancel(update: Update, context: CallbackContext) -> int:
+    update.message.reply_text('Диалог прерван. Чтобы начать заново, отправьте /start')
     context.user_data.clear()
     return ConversationHandler.END
 
 
 def main() -> None:
-    application = Application.builder().token(BOT_TOKEN).build()
+    # Создаем Updater и передаем ему токен бота
+    updater = Updater(BOT_TOKEN, use_context=True)
 
+    # Получаем диспетчер для регистрации обработчиков
+    dp = updater.dispatcher
+
+    # Настраиваем обработчик диалога (ConversationHandler)
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
-            AUTO_START: [MessageHandler(filters.TEXT & ~filters.COMMAND, autostart_choice)],
-            CONTROL: [MessageHandler(filters.TEXT & ~filters.COMMAND, control_choice)],
-            GPS: [MessageHandler(filters.TEXT & ~filters.COMMAND, gps_choice)],
+            AUTO_START: [MessageHandler(Filters.text & ~Filters.command, autostart_choice)],
+            CONTROL: [MessageHandler(Filters.text & ~Filters.command, control_choice)],
+            GPS: [MessageHandler(Filters.text & ~Filters.command, gps_choice)],
             PHONE: [
-                MessageHandler(filters.CONTACT, get_phone),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, get_phone)
+                MessageHandler(Filters.contact, get_phone),
+                MessageHandler(Filters.text & ~Filters.command, get_phone)
             ],
         },
         fallbacks=[CommandHandler('cancel', cancel)],
     )
 
-    application.add_handler(conv_handler)
-    application.run_polling()
+    # Добавляем обработчик в диспетчер
+    dp.add_handler(conv_handler)
+
+    # Запускаем бота
+    updater.start_polling()
+    updater.idle()
 
 
 if __name__ == '__main__':
