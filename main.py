@@ -168,14 +168,34 @@ def gps_choice(update: Update, context: CallbackContext) -> int:
             "К сожалению, не удалось подобрать подходящие системы. Пожалуйста, свяжитесь с нашим менеджером для консультации.")
         return PHONE
 
-    recommendation_text = "🔍 Исходя из ваших ответов, я рекомендую рассмотреть следующие системы:\n\n"
+    # Формируем описание функционала
+    answers = context.user_data['user_answers']
+    functionality_text = "🔍 Для вас важно, чтобы сигнализация имела следующий функционал:\n\n"
 
+    if answers.get('autostart') == 1:
+        functionality_text += "• 🚗 Автозапуск двигателя\n"
+    else:
+        functionality_text += "• 🚫 Без автозапуска\n"
+
+    if answers.get('control') == 1:
+        functionality_text += "• 📱 Управление через приложение (GSM)\n"
+    else:
+        functionality_text += "• 📟 Управление через брелок\n"
+
+    if answers.get('gps') == 1:
+        functionality_text += "• 🗺️ GPS-отслеживание\n"
+    else:
+        functionality_text += "• 🚫 Без GPS-отслеживания\n"
+
+    functionality_text += "\nИсходя из ваших предпочтений, рекомендую рассмотреть:\n\n"
+
+    # Добавляем рекомендованные системы
     for system in recommended:
-        brand_icon = "🐼" if system['brand'] == 'pandora' else "⭐"
-        recommendation_text += f"{brand_icon} <b>{system['name']}</b>\nСсылка: {system['link']}\n\n"
+        brand_icon = "🐼" if system['brand'] == 'pandora' or 'pandect' in system['name'].lower() else "⭐"
+        functionality_text += f"{brand_icon} <b>{system['name']}</b>\nСсылка: {system['link']}\n\n"
 
     # Сообщение после показа вариантов сигнализаций
-    recommendation_text += (
+    functionality_text += (
         "Оставьте ваш номер телефона и наш мастер свяжется с вами, что назвать точную стоимость установки на ваш авто или можете написать нам напрямую\n\n"
         "📍ул. Фадеева, 51А\n"
         "@ya7fadeeva_bot\n\n"
@@ -185,7 +205,7 @@ def gps_choice(update: Update, context: CallbackContext) -> int:
 
     context.user_data['bot_data'] = ", ".join([sys['name'] for sys in recommended])
 
-    update.message.reply_text(recommendation_text, parse_mode='HTML', disable_web_page_preview=True)
+    update.message.reply_text(functionality_text, parse_mode='HTML', disable_web_page_preview=True)
     update.message.reply_text(
         "Пожалуйста, поделитесь вашим номером телефона:",
         reply_markup=ReplyKeyboardMarkup(
