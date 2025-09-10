@@ -2,22 +2,12 @@ import logging
 import os
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, ConversationHandler, CallbackContext
-import requests
+from form_handler import SimpleFormHandler
+from config import BOT_TOKEN, FORM_URL
 
 # Настройка логирования
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# ========== КОНФИГУРАЦИЯ ==========
-# Токен бота из переменных окружения
-BOT_TOKEN = os.getenv('BOT_TOKEN', 'YOUR_BOT_TOKEN_HERE')
-
-# Данные для отправки на сайт
-WEBFORM_URL = "https://ya7auto.ru/crm/form/iframe/3/"
-FORM_FIELD_NAME = "firstname"
-FORM_FIELD_PHONE = "phone"
-FORM_FIELD_DATA = "about"
-# ==================================
 
 # Определяем состояния для ConversationHandler
 AUTO_START, CONTROL, GPS, PHONE = range(4)
@@ -69,7 +59,7 @@ def start(update: Update, context: CallbackContext) -> int:
     update.message.reply_text(
         "🥶 В условиях нашего климата необходимо прогревать двигатель перед поездкой... Какую систему выберете?",
         reply_markup=ReplyKeyboardMarkup(
-            [["С Автозапуском", "БЕЗ Автозапуском"]],
+            [["С Автозапуском", "БЕЗ Автозапуска"]],
             resize_keyboard=True,
             one_time_keyboard=True
         )
@@ -156,25 +146,21 @@ def get_phone(update: Update, context: CallbackContext) -> int:
     else:
         phone_number = update.message.text
 
-    form_data = {
-        FORM_FIELD_NAME: context.user_data.get('user_name', 'Неизвестно'),
-        FORM_FIELD_PHONE: phone_number,
-        FORM_FIELD_DATA: context.user_data.get('bot_data', 'Данные не сформированы')
-    }
+    # Отправляем данные через форму
+    form_handler = SimpleFormHandler(FORM_URL)
+    success, message = form_handler.submit_phone_only(phone_number)
 
-    try:
-        response = requests.post(WEBFORM_URL, data=form_data)
-        if response.status_code == 200:
-            update.message.reply_text(
-                "✅ Спасибо! Ваш номер и данные получены. Наш менеджер свяжется с вами!",
-                reply_markup=ReplyKeyboardMarkup([[]], resize_keyboard=True)
-            )
-        else:
-            logger.error(f"Ошибка при отправке формы: {response.status_code}")
-            update.message.reply_text("✅ Спасибо! Ваши данные приняты. Мы свяжемся с вами скоро.")
-    except Exception as e:
-        logger.error(f"Исключение при отправке формы: {e}")
-        update.message.reply_text("✅ Спасибо! Ваш номер принят. Мы свяжемся с вами скоро.")
+    if success:
+        update.message.reply_text(
+            "✅ Спасибо! Ваш номер и данные получены. Наш менеджер свяжется с вами!",
+            reply_markup=ReplyKeyboardMarkup([[]], resize_keyboard=True)
+        )
+    else:
+        logger.error(f"Ошибка отправки формы: {message}")
+        update.message.reply_text(
+            "✅ Спасибо! Ваш номер принят. Мы свяжемся с вами скоро.",
+            reply_markup=ReplyKeyboardMarkup([[]], resize_keyboard=True)
+        )
 
     context.user_data.clear()
     return ConversationHandler.END
