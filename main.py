@@ -14,6 +14,7 @@ AUTO_START, CONTROL, GPS, PHONE, RESTART = range(5)
 
 
 # Функция для сопоставления ответов и рекомендаций
+# Функция для сопоставления ответов и рекомендаций
 def recommend_systems(answers):
     systems = [
         # Pandora системы с точными ценами
@@ -41,7 +42,7 @@ def recommend_systems(answers):
          "price": "23 700 ₽", "link": "https://ya7auto.ru/auto-security/car-alarms/starline-s96-v2-lte-gps/"}
     ]
 
-    # Сначала ищем строго подходящие системы по всем характеристикам
+    # Ищем строго подходящие системы по всем характеристикам
     perfect_matches = []
     for system in systems:
         if (system['autostart'] == answers.get('autostart') and
@@ -49,46 +50,8 @@ def recommend_systems(answers):
                 system['gps'] == answers.get('gps')):
             perfect_matches.append(system)
 
-    # Если нашли подходящие системы - возвращаем их
-    if perfect_matches:
-        return perfect_matches
-
-    # Если нет строго подходящих, игнорируем GPS характеристику
-    matches_without_gps = []
-    for system in systems:
-        if (system['autostart'] == answers.get('autostart') and
-                (system['brelok'] == answers.get('control') or system['gsm'] == answers.get('control'))):
-            matches_without_gps.append(system)
-
-    return matches_without_gps
-
-
-def start(update: Update, context: CallbackContext) -> int:
-    user = update.message.from_user
-    context.user_data['user_name'] = user.first_name or user.username
-    context.user_data['user_answers'] = {}
-
-    # Сообщение 1.1
-    update.message.reply_text(f"👋🏻 Привет, {user.first_name}!\n\nЯ помогу тебе выбрать систему на твой автомобиль!")
-
-    # Сообщение 1.2
-    update.message.reply_text("⁉️ Давай решим, что должна уметь сигнализация?")
-
-    # Сообщение 1.3
-    update.message.reply_text("1️⃣ Нужен ли тебе автозапуск?")
-
-    # Сообщение 1.4
-    update.message.reply_text(
-        "❄️ В условиях нашего климата необходимо прогревать двигатель перед поездкой. Даже если на улице несильный мороз! Это снижает износ двигателя.\n\n"
-        "В конце концов просто приятно съесть в прогретый автомобиль 😌\n\n"
-        "❓Какую систему выберешь?",
-        reply_markup=ReplyKeyboardMarkup(
-            [["😉 С Автозапуском", "🥶 БЕЗ Автозапуска"]],
-            resize_keyboard=True,
-            one_time_keyboard=True
-        )
-    )
-    return AUTO_START
+    # Возвращаем максимум 2 подходящие системы
+    return perfect_matches[:2]
 
 
 def autostart_choice(update: Update, context: CallbackContext) -> int:
@@ -149,7 +112,8 @@ def gps_choice(update: Update, context: CallbackContext) -> int:
 
     if not recommended:
         update.message.reply_text(
-            "К сожалению, не удалось подобрать подходящие системы. Пожалуйста, свяжитесь с нашим менеджером для консультации.",
+            "❌ К сожалению, нет систем, которые точно соответствуют вашим требованиям.\n\n"
+            "Пожалуйста, свяжитесь с нашим менеджером для индивидуальной консультации 👨🏻‍🔧",
             reply_markup=ReplyKeyboardMarkup(
                 [["🔄 Начать заново"]],
                 resize_keyboard=True,
@@ -177,7 +141,7 @@ def gps_choice(update: Update, context: CallbackContext) -> int:
     else:
         functionality_text += "• 🚫 Без GPS-отслеживания\n"
 
-    functionality_text += "\nИсходя из ваших предпочтений, рекомендую рассмотреть:\n\n"
+    functionality_text += f"\nНашлось {len(recommended)} подходящих систем:\n\n"
 
     # Добавляем рекомендованные системы с характеристиками и точными ценами
     for system in recommended:
