@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 AUTO_START, CONTROL, GPS, PHONE, RESTART = range(5)
 
 
-# Функция для сопоставления ответов и рекомендаций
+# Функция для сопоставления ответов и рекомендаций - ТОЛЬКО СТРОГОЕ СООТВЕТСТВИЕ
 def recommend_systems(answers):
     systems = [
         # Pandora системы с точными ценами
@@ -41,12 +41,24 @@ def recommend_systems(answers):
          "price": "23 700 ₽", "link": "https://ya7auto.ru/auto-security/car-alarms/starline-s96-v2-lte-gps/"}
     ]
 
-    # Ищем строго подходящие системы по всем характеристикам
+    # СТРОГОЕ соответствие всем выбранным характеристикам
     perfect_matches = []
     for system in systems:
-        if (system['autostart'] == answers.get('autostart') and
-                (system['brelok'] == answers.get('control') or system['gsm'] == answers.get('control')) and
-                system['gps'] == answers.get('gps')):
+        # Проверяем автозапуск
+        autostart_match = system['autostart'] == answers.get('autostart')
+
+        # Проверяем тип управления (брелок ИЛИ GSM)
+        control_match = False
+        if answers.get('control') == 0:  # пользователь выбрал брелок
+            control_match = system['brelok'] == 1
+        else:  # пользователь выбрал приложение (GSM)
+            control_match = system['gsm'] == 1
+
+        # Проверяем GPS
+        gps_match = system['gps'] == answers.get('gps')
+
+        # Все три характеристики должны совпадать
+        if autostart_match and control_match and gps_match:
             perfect_matches.append(system)
 
     # Возвращаем максимум 2 подходящие системы
@@ -100,9 +112,9 @@ def autostart_choice(update: Update, context: CallbackContext) -> int:
 def control_choice(update: Update, context: CallbackContext) -> int:
     text = update.message.text
     if text == "😎 Приложение в телефоне":
-        context.user_data['user_answers']['control'] = 1
+        context.user_data['user_answers']['control'] = 1  # GSM управление
     else:
-        context.user_data['user_answers']['control'] = 0
+        context.user_data['user_answers']['control'] = 0  # Брелок
 
     update.message.reply_text("🔥Отлично, остался последний вопрос! 3️⃣ GPS-антенна")
 
