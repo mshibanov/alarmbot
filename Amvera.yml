@@ -1,0 +1,7 @@
+name: ya7auto-telegram-bot
+services:
+  backend:
+    runtime: python
+    command: python main.py
+    resources:
+      memory: 512Mi
