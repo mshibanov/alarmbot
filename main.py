@@ -14,7 +14,6 @@ AUTO_START, CONTROL, GPS, PHONE, RESTART = range(5)
 
 
 # Функция для сопоставления ответов и рекомендаций
-# Функция для сопоставления ответов и рекомендаций
 def recommend_systems(answers):
     systems = [
         # Pandora системы с точными ценами
@@ -54,6 +53,28 @@ def recommend_systems(answers):
     return perfect_matches[:2]
 
 
+def start(update: Update, context: CallbackContext) -> int:
+    user = update.message.from_user
+    context.user_data['user_name'] = user.first_name or user.username
+    context.user_data['user_answers'] = {}
+
+    update.message.reply_text(f"👋🏻 Привет, {user.first_name}!\n\nЯ помогу тебе выбрать систему на твой автомобиль!")
+    update.message.reply_text("⁉️ Давай решим, что должна уметь сигнализация?")
+    update.message.reply_text("1️⃣ Нужен ли тебе автозапуск?")
+
+    update.message.reply_text(
+        "❄️ В условиях нашего климата необходимо прогревать двигатель перед поездкой. Даже если на улице несильный мороз! Это снижает износ двигателя.\n\n"
+        "В конце концов просто приятно съесть в прогретый автомобиль 😌\n\n"
+        "❓Какую систему выберешь?",
+        reply_markup=ReplyKeyboardMarkup(
+            [["😉 С Автозапуском", "🥶 БЕЗ Автозапуска"]],
+            resize_keyboard=True,
+            one_time_keyboard=True
+        )
+    )
+    return AUTO_START
+
+
 def autostart_choice(update: Update, context: CallbackContext) -> int:
     text = update.message.text
     if text == "😉 С Автозапуском":
@@ -61,10 +82,8 @@ def autostart_choice(update: Update, context: CallbackContext) -> int:
     else:
         context.user_data['user_answers']['autostart'] = 0
 
-    # Сообщение 2.1
     update.message.reply_text("2️⃣ Как планируешь управлять системой? Брелок или GSM-модуль")
 
-    # Сообщение 2.2
     update.message.reply_text(
         "Можно управлять через брелок, но проблема в том, что сигнал тревоги от автомобиля до брелка не всегда стабилен и есть шанс не получить сигнал тревоги ⛔️\n\n"
         "Через приложение в телефоне в независимости от вашего местоположения вы получите сообщение в случае тревоги и сможете отправить команду на автозапуск 👏\n\n"
@@ -85,10 +104,8 @@ def control_choice(update: Update, context: CallbackContext) -> int:
     else:
         context.user_data['user_answers']['control'] = 0
 
-    # Сообщение 3.1
     update.message.reply_text("🔥Отлично, остался последний вопрос! 3️⃣ GPS-антенна")
 
-    # Сообщение 3.2
     update.message.reply_text(
         "🗺️Если вы часто даете машину чужие руки и вам важно отслеживать точное местоположение автомобиля, то вам необходимо выбрать систему с GPS.\n\n"
         "Ваш вариант❓",
@@ -122,7 +139,6 @@ def gps_choice(update: Update, context: CallbackContext) -> int:
         )
         return RESTART
 
-    # Формируем описание функционала
     answers = context.user_data['user_answers']
     functionality_text = "🔍 Для вас важно, чтобы сигнализация имела следующий функционал:\n\n"
 
@@ -143,11 +159,9 @@ def gps_choice(update: Update, context: CallbackContext) -> int:
 
     functionality_text += f"\nНашлось {len(recommended)} подходящих систем:\n\n"
 
-    # Добавляем рекомендованные системы с характеристиками и точными ценами
     for system in recommended:
         brand_icon = "🐼" if system['brand'] == 'pandora' or 'pandect' in system['name'].lower() else "⭐"
 
-        # Формируем характеристики
         characteristics = []
         if system['autostart'] == 1:
             characteristics.append("автозапуск")
@@ -165,7 +179,6 @@ def gps_choice(update: Update, context: CallbackContext) -> int:
             f"• Ссылка: {system['link']}\n\n"
         )
 
-    # Обновленное заключительное сообщение
     functionality_text += (
         "Хочешь узнать стоимость установки на твой авто?💰\n\n"
         "Оставь номер телефона и наш мастер свяжется с тобой 📞\n\n"
@@ -198,7 +211,6 @@ def get_phone(update: Update, context: CallbackContext) -> int:
     else:
         phone_number = update.message.text
 
-    # Отправляем данные через форму
     form_handler = SimpleFormHandler(FORM_URL)
     success, message = form_handler.submit_phone_only(phone_number)
 
@@ -247,13 +259,9 @@ def cancel(update: Update, context: CallbackContext) -> int:
 
 
 def main() -> None:
-    # Создаем Updater и передаем ему токен бота
     updater = Updater(BOT_TOKEN, use_context=True)
-
-    # Получаем диспетчер для регистрации обработчиков
     dp = updater.dispatcher
 
-    # Настраиваем обработчик диалога (ConversationHandler)
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
@@ -264,17 +272,12 @@ def main() -> None:
                 MessageHandler(Filters.contact, get_phone),
                 MessageHandler(Filters.text & ~Filters.command, get_phone)
             ],
-            RESTART: [
-                MessageHandler(Filters.text & ~Filters.command, restart_choice)
-            ],
+            RESTART: [MessageHandler(Filters.text & ~Filters.command, restart_choice)],
         },
         fallbacks=[CommandHandler('cancel', cancel)],
     )
 
-    # Добавляем обработчик в диспетчер
     dp.add_handler(conv_handler)
-
-    # Запускаем бота
     updater.start_polling()
     updater.idle()
 
