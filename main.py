@@ -14,34 +14,35 @@ AUTO_START, CONTROL, GPS, PHONE = range(4)
 
 
 # Функция для сопоставления ответов и рекомендаций
+# Функция для сопоставления ответов и рекомендаций
 def recommend_systems(answers):
     systems = [
-        # Pandora системы
+        # Pandora системы с точными ценами
         {"name": "Pandora DX-40R", "brand": "pandora", "autostart": 0, "brelok": 1, "gsm": 0, "gps": 0,
-         "link": "https://ya7auto.ru/auto-security/car-alarms/pandora-dx-40r/"},
+         "price": "10 500 ₽", "link": "https://ya7auto.ru/auto-security/car-alarms/pandora-dx-40r/"},
         {"name": "Pandora DX-40RS", "brand": "pandora", "autostart": 1, "brelok": 1, "gsm": 0, "gps": 0,
-         "link": "https://ya7auto.ru/auto-security/car-alarms/pandora-dx-40rs/"},
+         "price": "13 200 ₽", "link": "https://ya7auto.ru/auto-security/car-alarms/pandora-dx-40rs/"},
         {"name": "PanDECT X-1800L v4 Light", "brand": "pandora", "autostart": 1, "brelok": 0, "gsm": 1, "gps": 0,
-         "link": "https://ya7auto.ru/auto-security/car-alarms/pandect-x-1800l-v4-light/"},
+         "price": "18 900 ₽", "link": "https://ya7auto.ru/auto-security/car-alarms/pandect-x-1800l-v4-light/"},
         {"name": "Pandora VX 4G Light", "brand": "pandora", "autostart": 1, "brelok": 0, "gsm": 1, "gps": 0,
-         "link": "https://ya7auto.ru/auto-security/car-alarms/pandora-vx-4g-light/"},
+         "price": "21 500 ₽", "link": "https://ya7auto.ru/auto-security/car-alarms/pandora-vx-4g-light/"},
         {"name": "Pandora VX-4G GPS v2", "brand": "pandora", "autostart": 1, "brelok": 0, "gsm": 1, "gps": 1,
-         "link": "https://ya7auto.ru/auto-security/car-alarms/pandora-vx-4g-gps-v2/"},
+         "price": "26 800 ₽", "link": "https://ya7auto.ru/auto-security/car-alarms/pandora-vx-4g-gps-v2/"},
         {"name": "Pandora VX 3100", "brand": "pandora", "autostart": 1, "brelok": 1, "gsm": 1, "gps": 1,
-         "link": "https://ya7auto.ru/auto-security/car-alarms/pandora-vx-3100/"},
+         "price": "29 500 ₽", "link": "https://ya7auto.ru/auto-security/car-alarms/pandora-vx-3100/"},
 
-        # Starline системы
+        # Starline системы с точными ценами
         {"name": "StarLine A63 v2 ECO", "brand": "starline", "autostart": 0, "brelok": 1, "gsm": 0, "gps": 0,
-         "link": "https://ya7auto.ru/auto-security/car-alarms/starline-a63-v2-eco/"},
+         "price": "9 800 ₽", "link": "https://ya7auto.ru/auto-security/car-alarms/starline-a63-v2-eco/"},
         {"name": "StarLine А93 v2 ECO", "brand": "starline", "autostart": 1, "brelok": 1, "gsm": 0, "gps": 0,
-         "link": "https://ya7auto.ru/auto-security/car-alarms/starline-a93-v2-eco/"},
+         "price": "12 900 ₽", "link": "https://ya7auto.ru/auto-security/car-alarms/starline-a93-v2-eco/"},
         {"name": "StarLine S96 v2 ECO", "brand": "starline", "autostart": 1, "brelok": 0, "gsm": 1, "gps": 0,
-         "link": "https://ya7auto.ru/auto-security/car-alarms/starline-s96-v2-eco/"},
+         "price": "17 200 ₽", "link": "https://ya7auto.ru/auto-security/car-alarms/starline-s96-v2-eco/"},
         {"name": "StarLine S96 V2 LTE GPS", "brand": "starline", "autostart": 1, "brelok": 0, "gsm": 1, "gps": 1,
-         "link": "https://ya7auto.ru/auto-security/car-alarms/starline-s96-v2-lte-gps/"}
+         "price": "23 700 ₽", "link": "https://ya7auto.ru/auto-security/car-alarms/starline-s96-v2-lte-gps/"}
     ]
 
-    # Ищем идеально подходящие системы
+    # Сначала ищем строго подходящие системы по всем характеристикам
     perfect_matches = []
     for system in systems:
         if (system['autostart'] == answers.get('autostart') and
@@ -49,62 +50,18 @@ def recommend_systems(answers):
                 system['gps'] == answers.get('gps')):
             perfect_matches.append(system)
 
-    # Если нашли 2-3 идеальных совпадения - возвращаем их
-    if len(perfect_matches) >= 2:
-        return perfect_matches[:3]
+    # Если нашли подходящие системы - возвращаем их
+    if perfect_matches:
+        return perfect_matches
 
-    # Если идеальных совпадений мало, добавляем дополнительные варианты
-    matched_systems = perfect_matches.copy()
+    # Если нет строго подходящих, игнорируем GPS характеристику
+    matches_without_gps = []
+    for system in systems:
+        if (system['autostart'] == answers.get('autostart') and
+                (system['brelok'] == answers.get('control') or system['gsm'] == answers.get('control'))):
+            matches_without_gps.append(system)
 
-    # Добавляем хотя бы одну Pandora
-    pandora_systems = [s for s in systems if s['brand'] == 'pandora' and s not in matched_systems]
-    if pandora_systems and not any(s['brand'] == 'pandora' for s in matched_systems):
-        matched_systems.append(pandora_systems[0])
-
-    # Добавляем хотя бы одну Starline
-    starline_systems = [s for s in systems if s['brand'] == 'starline' and s not in matched_systems]
-    if starline_systems and not any(s['brand'] == 'starline' for s in matched_systems):
-        matched_systems.append(starline_systems[0])
-
-    # Если все еще мало вариантов, добавляем самые популярные
-    if len(matched_systems) < 2:
-        # Популярные модели для дополнения
-        popular_systems = [
-            s for s in systems if s['name'] in ['Pandora DX-40RS', 'StarLine А93 v2 ECO', 'StarLine S96 v2 ECO']
-                                  and s not in matched_systems
-        ]
-        while len(matched_systems) < 3 and popular_systems:
-            matched_systems.append(popular_systems.pop(0))
-
-    return matched_systems[:3]  # Возвращаем максимум 3 варианта
-
-
-def start(update: Update, context: CallbackContext) -> int:
-    user = update.message.from_user
-    context.user_data['user_name'] = user.first_name or user.username
-    context.user_data['user_answers'] = {}
-
-    # Сообщение 1.1
-    update.message.reply_text(f"👋🏻 Привет, {user.first_name}!\n\nЯ помогу тебе выбрать систему на твой автомобиль!")
-
-    # Сообщение 1.2
-    update.message.reply_text("⁉️ Давай решим, что должна уметь сигнализация?")
-
-    # Сообщение 1.3
-    update.message.reply_text("1️⃣ Нужен ли тебе автозапуск?")
-
-    # Сообщение 1.4
-    update.message.reply_text(
-        "❄️ В условиях нашего климата необходимо прогревать двигатель перед поездкой. Даже если на улице несильный мороз! Это снижает износ двигателя.\n\n"
-        "В конце концов просто приятно съесть в прогретый автомобиль 😌\n\n"
-        "❓Какую систему выберешь?",
-        reply_markup=ReplyKeyboardMarkup(
-            [["😉 С Автозапуском", "🥶 БЕЗ Автозапуска"]],
-            resize_keyboard=True,
-            one_time_keyboard=True
-        )
-    )
-    return AUTO_START
+    return matches_without_gps
 
 
 def autostart_choice(update: Update, context: CallbackContext) -> int:
@@ -154,104 +111,27 @@ def control_choice(update: Update, context: CallbackContext) -> int:
     return GPS
 
 
-def gps_choice(update: Update, context: CallbackContext) -> int:
-    text = update.message.text
-    if text == "🕵🏻‍♂️ С GPS- антенны":
-        context.user_data['user_answers']['gps'] = 1
-    else:
-        context.user_data['user_answers']['gps'] = 0
+# Добавляем рекомендованные системы с характеристиками и точными ценами
+for system in recommended:
+    brand_icon = "🐼" if system['brand'] == 'pandora' or 'pandect' in system['name'].lower() else "⭐"
 
-    recommended = recommend_systems(context.user_data['user_answers'])
+    # Формируем характеристики
+    characteristics = []
+    if system['autostart'] == 1:
+        characteristics.append("автозапуск")
+    if system['brelok'] == 1:
+        characteristics.append("брелок")
+    if system['gsm'] == 1:
+        characteristics.append("GSM-управление")
+    if system['gps'] == 1:
+        characteristics.append("GPS")
 
-    if not recommended:
-        update.message.reply_text(
-            "К сожалению, не удалось подобрать подходящие системы. Пожалуйста, свяжитесь с нашим менеджером для консультации.")
-        return PHONE
-
-    # Формируем описание функционала
-    answers = context.user_data['user_answers']
-    functionality_text = "🔍 Для вас важно, чтобы сигнализация имела следующий функционал:\n\n"
-
-    if answers.get('autostart') == 1:
-        functionality_text += "• 🚗 Автозапуск двигателя\n"
-    else:
-        functionality_text += "• 🚫 Без автозапуска\n"
-
-    if answers.get('control') == 1:
-        functionality_text += "• 📱 Управление через приложение (GSM)\n"
-    else:
-        functionality_text += "• 📟 Управление через брелок\n"
-
-    if answers.get('gps') == 1:
-        functionality_text += "• 🗺️ GPS-отслеживание\n"
-    else:
-        functionality_text += "• 🚫 Без GPS-отслеживания\n"
-
-    functionality_text += "\nИсходя из ваших предпочтений, рекомендую рассмотреть:\n\n"
-
-    # Добавляем рекомендованные системы с характеристиками и ценами
-    for system in recommended:
-        brand_icon = "🐼" if system['brand'] == 'pandora' or 'pandect' in system['name'].lower() else "⭐"
-
-        # Формируем характеристики
-        characteristics = []
-        if system['autostart'] == 1:
-            characteristics.append("автозапуск")
-        if system['brelok'] == 1:
-            characteristics.append("брелок")
-        if system['gsm'] == 1:
-            characteristics.append("GSM-управление")
-        if system['gps'] == 1:
-            characteristics.append("GPS")
-
-        # Примерные цены (можно заменить на актуальные)
-        if system['brand'] == 'pandora' or 'pandect' in system['name'].lower():
-            if system['gsm'] == 1 and system['gps'] == 1:
-                price = "от 25 000 ₽"
-            elif system['gsm'] == 1:
-                price = "от 18 000 ₽"
-            else:
-                price = "от 12 000 ₽"
-        else:  # starline
-            if system['gsm'] == 1 and system['gps'] == 1:
-                price = "от 22 000 ₽"
-            elif system['gsm'] == 1:
-                price = "от 16 000 ₽"
-            else:
-                price = "от 10 000 ₽"
-
-        functionality_text += (
-            f"{brand_icon} <b>{system['name']}</b>\n"
-            f"• Характеристики: {', '.join(characteristics)}\n"
-            f"• Стоимость: {price}\n"
-            f"• Ссылка: {system['link']}\n\n"
-        )
-
-    # Обновленное заключительное сообщение
     functionality_text += (
-        "Хочешь узнать стоимость установки на твой авто?💰\n\n"
-        "Оставь номер телефона и наш мастер свяжется с тобой 📞\n\n"
-        "Мы официальные представители Pandora и StarLine в Самаре 👨🏻‍🔧\n\n"
-        "У нас два филиала 🏢 можешь написать нам напрямую ✍🏻\n"
-        "Будем рады помочь\n\n"
-        "📍ул. Фадеева, 51А\n"
-        "@ya7fadeeva_bot\n\n"
-        "📍Московское ш., 16 км, 1А\n"
-        "@ya7moskva_bot"
+        f"{brand_icon} <b>{system['name']}</b>\n"
+        f"• Характеристики: {', '.join(characteristics)}\n"
+        f"• Стоимость: {system['price']}\n"
+        f"• Ссылка: {system['link']}\n\n"
     )
-
-    context.user_data['bot_data'] = ", ".join([sys['name'] for sys in recommended])
-
-    update.message.reply_text(functionality_text, parse_mode='HTML', disable_web_page_preview=True)
-    update.message.reply_text(
-        "Пожалуйста, поделитесь вашим номером телефона:",
-        reply_markup=ReplyKeyboardMarkup(
-            [[KeyboardButton("📞 Отправить мой номер", request_contact=True)]],
-            resize_keyboard=True,
-            one_time_keyboard=True
-        )
-    )
-    return PHONE
 
 
 def get_phone(update: Update, context: CallbackContext) -> int:
