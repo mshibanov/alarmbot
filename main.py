@@ -1,10 +1,10 @@
 import os
 import logging
 import re
-import asyncio
+import time
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
-from telegram.error import Conflict, RetryAfter
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, ConversationHandler, CallbackContext
+from telegram.error import TelegramError
 import requests
 from bs4 import BeautifulSoup
 
@@ -73,59 +73,24 @@ def send_to_crm(phone_number, user_name=None):
 
     # Заголовки как у браузера
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'ru-RU,ru;q=0.9,en;q=0.8',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'Content-Type': 'application/x-www-form-urlencoded',
-        'Origin': 'https://ya7auto.ru',
         'Referer': 'https://ya7auto.ru/',
-        'Connection': 'keep-alive',
     }
 
     try:
         logger.info(f"Отправка данных в CRM: {form_data}")
 
-        # Создаем сессию для сохранения куки
-        session = requests.Session()
-
-        # Сначала получаем главную страницу для установки куки
-        session.get('https://ya7auto.ru/', headers=headers, timeout=10)
-
-        # Получаем саму форму iframe для получения CSRF токена и других скрытых полей
-        form_response = session.get(url, headers=headers, timeout=10)
-
-        # Парсим HTML формы чтобы найти скрытые поля
-        soup = BeautifulSoup(form_response.text, 'html.parser')
-        hidden_fields = {}
-
-        # Ищем все скрытые поля формы
-        for input_tag in soup.find_all('input', type='hidden'):
-            if input_tag.get('name') and input_tag.get('value'):
-                hidden_fields[input_tag['name']] = input_tag['value']
-
-        # Добавляем скрытые поля к данным формы
-        form_data.update(hidden_fields)
-
-        logger.info(f"Полные данные для отправки: {form_data}")
-
         # Отправляем POST запрос с данными формы
-        response = session.post(url, data=form_data, headers=headers, timeout=15)
+        response = requests.post(url, data=form_data, headers=headers, timeout=15)
 
         logger.info(f"Ответ CRM: {response.status_code}")
 
         # Проверяем успешность по статусу коду
         if response.status_code == 200:
-            # Дополнительная проверка по содержанию ответа
-            response_text = response.text.lower()
-            success_indicators = ['успех', 'success', 'спасибо', 'thank', 'принято', 'отправлено']
-
-            if any(indicator in response_text for indicator in success_indicators):
-                logger.info(f"✅ Данные успешно отправлены в CRM")
-                return True
-            else:
-                logger.warning(f"⚠️ Форма вернула 200, но без явных признаков успеха. Ответ: {response.text[:200]}...")
-                # Все равно считаем успехом, так как сервер принял запрос
-                return True
+            logger.info(f"✅ Данные успешно отправлены в CRM")
+            return True
         else:
             logger.error(f"❌ Ошибка отправки формы: {response.status_code}")
             return False
@@ -150,13 +115,17 @@ def validate_phone_number(phone):
     return None
 
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+def start(update: Update, context: CallbackContext) -> int:
     """Начинает опрос, задает первый вопрос."""
     user = update.message.from_user
-    await update.message.reply_text(
+    update.message.reply_text(
         f"👋🏻 Приветствуем, {user.first_name}!\n\n"
         "Готов помочь подобрать идеальную систему для твоего автомобиля!\n\n"
-        "🦾 Давай определимся с ключевыми функции...",
+        "🦾 Давай определимся с ключевыми функциями\n\n"
+        "☀️ Подавляющее большинство наших клиентов выбирают систему с главной целью — реализовать дистанционный запуск двигателя.\n\n"
+        "В нашем климате прогрев двигателя перед поездкой — это необходимость. Даже при небольшом минусе это значительно снижает износ мотора.\n\n"
+        "Ну и конечно, садиться в уже тёплый и комфортный салон — это просто приятно.\n\n"
+        "Какая функция для вас в приоритете?",
         reply_markup=ReplyKeyboardMarkup(
             [["С автозапуском", "БЕЗ автозапуска"]],
             one_time_keyboard=True,
@@ -166,14 +135,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return AUTOSTART
 
 
-async def autostart_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+def autostart_choice(update: Update, context: CallbackContext) -> int:
     """Обрабатывает выбор автозапуска и задает второй вопрос."""
     choice = update.message.text
     user_id = update.message.from_user.id
     user_data[user_id] = {'autostart': 1 if choice == 'С автозапуском' else 0}
 
-    await update.message.reply_text(
-        "📡 Теперь давай выберем способ управления...",
+    update.message.reply_text(
+        "📡 Теперь давай выберем способ управления\n\n"
+        "🙄 Есть устаревший метод — управление с брелока сигнализации. Его минус в нестабильном сигнале: есть риск не получить оповещение о тревоге. Поэтому мы рекомендуем более современный вариант — управление со смартфона.\n\n"
+        "☺️ Через мобильное приложение ты сможешь дистанционно открывать и закрывать авто, отслеживать его местоположение и статус, настраивать датчики и многое другое. Главное — ты гарантированно получишь пуш-уведомление о любом происшествии, где бы ты ни был.\n\n"
+        "Как вам удобнее управлять системой?",
         reply_markup=ReplyKeyboardMarkup(
             [["😎 Приложение в телефоне", "📺 Брелок"]],
             one_time_keyboard=True,
@@ -183,14 +155,17 @@ async def autostart_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     return CONTROL
 
 
-async def control_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+def control_choice(update: Update, context: CallbackContext) -> int:
     """Обрабатывает выбор управления и задает третий вопрос."""
     choice = update.message.text
     user_id = update.message.from_user.id
     user_data[user_id]['control'] = 'app' if 'Приложение' in choice else 'remote'
 
-    await update.message.reply_text(
-        "🔥 Отлично! Мы почти подобрали твою идеальную систему...",
+    update.message.reply_text(
+        "🔥 Отлично! Мы почти подобрали твою идеальную систему. Остался последний шаг.\n\n"
+        "Если ты часто передаешь ключи другим людям или тебе критично важно отслеживать каждое перемещение автомобиля, то тебе нужна система со встроенным GPS-модулем.\n\n"
+        "Он позволит тебе в реальном времени видеть точное местоположение машины, а в приложении можно будет посмотреть детальный маршрут ее поездки.\n\n"
+        "Нужен ли вам GPS-модуль для отслеживания?",
         reply_markup=ReplyKeyboardMarkup(
             [["Да, нужен GPS", "Нет, не нужен"]],
             one_time_keyboard=True,
@@ -200,7 +175,7 @@ async def control_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     return GPS
 
 
-async def gps_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+def gps_choice(update: Update, context: CallbackContext) -> int:
     """Обрабатывает выбор GPS, показывает рекомендацию и запрашивает телефон."""
     choice = update.message.text
     user_id = update.message.from_user.id
@@ -231,9 +206,9 @@ async def gps_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     else:
         message_text = "К сожалению, по вашим запросам не найдено подходящих систем. Оставьте ваш номер телефона, и наш специалист поможет вам с подбором вручную."
 
-    await update.message.reply_text(message_text, parse_mode='HTML', disable_web_page_preview=True)
+    update.message.reply_text(message_text, parse_mode='HTML', disable_web_page_preview=True)
 
-    await update.message.reply_text(
+    update.message.reply_text(
         "Пожалуйста, отправьте ваш номер телефона. Используйте кнопку ниже для удобства.",
         reply_markup=ReplyKeyboardMarkup(
             [[KeyboardButton("📞 Отправить мой номер", request_contact=True)], ["Ввести номер вручную"]],
@@ -244,7 +219,7 @@ async def gps_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return PHONE
 
 
-async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+def get_phone(update: Update, context: CallbackContext) -> int:
     """Обрабатывает полученный контакт и отправляет его в CRM."""
     phone_number = None
     user = update.message.from_user
@@ -253,7 +228,7 @@ async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if update.message.contact:
         phone_number = validate_phone_number(update.message.contact.phone_number)
     elif update.message.text == "Ввести номер вручную":
-        await update.message.reply_text(
+        update.message.reply_text(
             "Пожалуйста, введите ваш номер телефона в формате +7XXX...",
             reply_markup=ReplyKeyboardMarkup([["Отмена"]], resize_keyboard=True)
         )
@@ -262,23 +237,23 @@ async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         phone_number = validate_phone_number(update.message.text)
 
     if not phone_number:
-        await update.message.reply_text("Неверный формат номера. Пожалуйста, введите номер в формате +7XXX...")
+        update.message.reply_text("Неверный формат номера. Пожалуйста, введите номер в формате +7XXX...")
         return PHONE
 
     # Показываем что идет отправка
-    await update.message.reply_text("⌛ Отправляем ваши данные в CRM...")
+    update.message.reply_text("⌛ Отправляем ваши данные в CRM...")
 
     # Отправляем в CRM (имя и телефон)
     success = send_to_crm(phone_number, user_name)
 
     if success:
-        await update.message.reply_text(
+        update.message.reply_text(
             "✅ Спасибо! Ваши данные приняты и отправлены менеджеру. Мы свяжемся с вами в ближайшее время!\n\n"
             "Для нового подбора нажмите /start",
             reply_markup=ReplyKeyboardMarkup([[]], resize_keyboard=True)
         )
     else:
-        await update.message.reply_text(
+        update.message.reply_text(
             "❌ Произошла ошибка при отправке данных. Пожалуйста, попробуйте позже или свяжитесь с нами по телефону.\n\n"
             "Для повторной попытки нажмите /start",
             reply_markup=ReplyKeyboardMarkup([[]], resize_keyboard=True)
@@ -287,69 +262,54 @@ async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return ConversationHandler.END
 
 
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+def cancel(update: Update, context: CallbackContext) -> int:
     """Отменяет опрос."""
-    await update.message.reply_text(
+    update.message.reply_text(
         'Диалог прерван. Если нужна помощь, начните заново с /start.',
         reply_markup=ReplyKeyboardMarkup([[]], resize_keyboard=True)
     )
     return ConversationHandler.END
 
 
-async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+def error_handler(update: Update, context: CallbackContext):
     """Обрабатывает ошибки."""
     logger.error("Ошибка:", exc_info=context.error)
 
 
-def main() -> None:
+def main():
     """Запускает бота в polling режиме"""
     logger.info("🚀 Запуск бота в polling режиме...")
 
-    # Создаем Application с обработкой конфликтов
-    application = Application.builder() \
-        .token(BOT_TOKEN) \
-        .read_timeout(30) \
-        .write_timeout(30) \
-        .connect_timeout(30) \
-        .pool_timeout(30) \
-        .build()
+    # Создаем Updater (старая версия PTB)
+    updater = Updater(BOT_TOKEN, use_context=True)
 
-    application.add_error_handler(error_handler)
+    # Получаем dispatcher для регистрации обработчиков
+    dp = updater.dispatcher
+    dp.add_error_handler(error_handler)
 
     # Обработчик диалога
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
-            AUTOSTART: [MessageHandler(filters.Regex("^(С автозапуском|БЕЗ автозапуска)$"), autostart_choice)],
-            CONTROL: [MessageHandler(filters.Regex("^(😎 Приложение в телефоне|📺 Брелок)$"), control_choice)],
-            GPS: [MessageHandler(filters.Regex("^(Да, нужен GPS|Нет, не нужен)$"), gps_choice)],
+            AUTOSTART: [MessageHandler(Filters.regex('^(С автозапуском|БЕЗ автозапуска)$'), autostart_choice)],
+            CONTROL: [MessageHandler(Filters.regex('^(😎 Приложение в телефоне|📺 Брелок)$'), control_choice)],
+            GPS: [MessageHandler(Filters.regex('^(Да, нужен GPS|Нет, не нужен)$'), gps_choice)],
             PHONE: [
-                MessageHandler(filters.CONTACT, get_phone),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, get_phone)
+                MessageHandler(Filters.contact, get_phone),
+                MessageHandler(Filters.text & ~Filters.command, get_phone)
             ],
         },
         fallbacks=[CommandHandler('cancel', cancel)],
     )
 
-    application.add_handler(conv_handler)
+    dp.add_handler(conv_handler)
 
-    # Запускаем polling с обработкой ошибок
+    # Запускаем polling
     logger.info("✅ Бот запущен и ожидает сообщений...")
+    updater.start_polling()
 
-    try:
-        application.run_polling(
-            drop_pending_updates=True,  # Игнорирует старые сообщения при запуске
-            allowed_updates=Update.ALL_TYPES,
-            close_loop=False
-        )
-    except Conflict as e:
-        logger.error(f"⚠️ Конфликт: другой экземпляр бота уже запущен. {e}")
-        logger.info("🔄 Перезапуск через 10 секунд...")
-        asyncio.run(asyncio.sleep(10))
-        main()  # Рекурсивный перезапуск
-    except Exception as e:
-        logger.error(f"💥 Критическая ошибка: {e}")
-        raise
+    # Запускаем бота до принудительной остановки
+    updater.idle()
 
 
 if __name__ == '__main__':
