@@ -1,297 +1,345 @@
-import logging
 import os
+import logging
+import re
+import asyncio
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, ConversationHandler, CallbackContext
-from form_handler import SimpleFormHandler
-from config import BOT_TOKEN, FORM_URL
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
+from telegram.error import Conflict, RetryAfter
+import requests
+from bs4 import BeautifulSoup
 
 # Настройка логирования
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
 logger = logging.getLogger(__name__)
 
-# Определяем состояния для ConversationHandler
-AUTO_START, CONTROL, GPS, PHONE, RESTART = range(5)
+# Токен бота из переменных окружения
+BOT_TOKEN = os.getenv('BOT_TOKEN')
+
+# Проверяем токен
+if not BOT_TOKEN:
+    logger.error("❌ Токен бота не найден! Установите переменную окружения BOT_TOKEN")
+    exit(1)
+
+# Состояния диалога
+AUTOSTART, CONTROL, GPS, PHONE = range(4)
+user_data = {}
+
+# Список продуктов
+PRODUCTS_DATA = [
+    {'name': 'Pandora DX-40R', 'autostart': 0, 'remote': 1, 'gsm': 0, 'gps': 0,
+     'link': 'https://ya7auto.ru/auto-security/car-alarms/pandora-dx-40r/'},
+    {'name': 'Pandora DX-40RS', 'autostart': 1, 'remote': 1, 'gsm': 0, 'gps': 0,
+     'link': 'https://ya7auto.ru/auto-security/car-alarms/pandora-dx-40rs/'},
+    {'name': 'PanDECT X-1800L v4 Light', 'autostart': 1, 'remote': 0, 'gsm': 1, 'gps': 0,
+     'link': 'https://ya7auto.ru/auto-security/car-alarms/pandect-x-1800l-v4-light/'},
+    {'name': 'Pandora VX 4G Light', 'autostart': 1, 'remote': 0, 'gsm': 1, 'gps': 0,
+     'link': 'https://ya7auto.ru/auto-security/car-alarms/pandora-vx-4g-light/'},
+    {'name': 'Pandora VX-4G GPS v2', 'autostart': 1, 'remote': 0, 'gsm': 1, 'gps': 1,
+     'link': 'https://ya7auto.ru/auto-security/car-alarms/pandora-vx-4g-gps-v2/'},
+    {'name': 'Pandora VX 3100', 'autostart': 1, 'remote': 1, 'gsm': 1, 'gps': 1,
+     'link': 'https://ya7auto.ru/auto-security/car-alarms/pandora-vx-3100/'},
+    {'name': 'StarLine A63 v2 ECO', 'autostart': 0, 'remote': 1, 'gsm': 0, 'gps': 0,
+     'link': 'https://ya7auto.ru/auto-security/car-alarms/starline-a63-v2-eco/'},
+    {'name': 'StarLine А93 v2 ECO', 'autostart': 1, 'remote': 1, 'gsm': 0, 'gps': 0,
+     'link': 'https://ya7auto.ru/auto-security/car-alarms/starline-a93-v2-eco/'},
+    {'name': 'StarLine S96 v2 ECO', 'autostart': 1, 'remote': 0, 'gsm': 1, 'gps': 0,
+     'link': 'https://ya7auto.ru/auto-security/car-alarms/starline-s96-v2-eco/'},
+    {'name': 'StarLine S96 V2 LTE GPS', 'autostart': 1, 'remote': 0, 'gsm': 1, 'gps': 1,
+     'link': 'https://ya7auto.ru/auto-security/car-alarms/starline-s96-v2-lte-gps/'}
+]
 
 
-# Функция для сопоставления ответов и рекомендаций - ТОЛЬКО СТРОГОЕ СООТВЕТСТВИЕ
-def recommend_systems(answers):
-    systems = [
-        # Pandora системы с точными ценами
-        {"name": "Pandora DX-40R", "brand": "pandora", "autostart": 0, "brelok": 1, "gsm": 0, "gps": 0,
-         "price": "10 500 ₽", "link": "https://ya7auto.ru/auto-security/car-alarms/pandora-dx-40r/"},
-        {"name": "Pandora DX-40RS", "brand": "pandora", "autostart": 1, "brelok": 1, "gsm": 0, "gps": 0,
-         "price": "13 200 ₽", "link": "https://ya7auto.ru/auto-security/car-alarms/pandora-dx-40rs/"},
-        {"name": "PanDECT X-1800L v4 Light", "brand": "pandora", "autostart": 1, "brelok": 0, "gsm": 1, "gps": 0,
-         "price": "18 900 ₽", "link": "https://ya7auto.ru/auto-security/car-alarms/pandect-x-1800l-v4-light/"},
-        {"name": "Pandora VX 4G Light", "brand": "pandora", "autostart": 1, "brelok": 0, "gsm": 1, "gps": 0,
-         "price": "21 500 ₽", "link": "https://ya7auto.ru/auto-security/car-alarms/pandora-vx-4g-light/"},
-        {"name": "Pandora VX-4G GPS v2", "brand": "pandora", "autostart": 1, "brelok": 0, "gsm": 1, "gps": 1,
-         "price": "26 800 ₽", "link": "https://ya7auto.ru/auto-security/car-alarms/pandora-vx-4g-gps-v2/"},
-        {"name": "Pandora VX 3100", "brand": "pandora", "autostart": 1, "brelok": 1, "gsm": 1, "gps": 1,
-         "price": "29 500 ₽", "link": "https://ya7auto.ru/auto-security/car-alarms/pandora-vx-3100/"},
+def send_to_crm(phone_number, user_name=None):
+    """Отправляет данные в CRM через веб-форму"""
+    url = "https://ya7auto.ru/crm/form/iframe/3/"
 
-        # Starline системы с точными ценами
-        {"name": "StarLine A63 v2 ECO", "brand": "starline", "autostart": 0, "brelok": 1, "gsm": 0, "gps": 0,
-         "price": "9 800 ₽", "link": "https://ya7auto.ru/auto-security/car-alarms/starline-a63-v2-eco/"},
-        {"name": "StarLine А93 v2 ECO", "brand": "starline", "autostart": 1, "brelok": 1, "gsm": 0, "gps": 0,
-         "price": "12 900 ₽", "link": "https://ya7auto.ru/auto-security/car-alarms/starline-a93-v2-eco/"},
-        {"name": "StarLine S96 v2 ECO", "brand": "starline", "autostart": 1, "brelok": 0, "gsm": 1, "gps": 0,
-         "price": "17 200 ₽", "link": "https://ya7auto.ru/auto-security/car-alarms/starline-s96-v2-eco/"},
-        {"name": "StarLine S96 V2 LTE GPS", "brand": "starline", "autostart": 1, "brelok": 0, "gsm": 1, "gps": 1,
-         "price": "23 700 ₽", "link": "https://ya7auto.ru/auto-security/car-alarms/starline-s96-v2-lte-gps/"}
-    ]
+    # Если имя не указано, используем "Клиент из Telegram"
+    if not user_name:
+        user_name = "Клиент из Telegram"
 
-    # СТРОГОЕ соответствие всем выбранным характеристикам
-    perfect_matches = []
-    for system in systems:
-        # Проверяем автозапуск
-        autostart_match = system['autostart'] == answers.get('autostart')
+    # Подготавливаем данные формы
+    form_data = {
+        'phone': phone_number,
+        'name': user_name,  # Важное исправление: отправляем имя в правильное поле
+        'form_id': '3',
+        'utm_source': 'telegram_bot',
+        'utm_medium': 'bot',
+        'utm_campaign': 'auto_selection',
+        'comment': 'Заявка из Telegram-бота по подбору автосигнализаций'
+    }
 
-        # Проверяем тип управления (брелок ИЛИ GSM)
-        control_match = False
-        if answers.get('control') == 0:  # пользователь выбрал брелок
-            control_match = system['brelok'] == 1
-        else:  # пользователь выбрал приложение (GSM)
-            control_match = system['gsm'] == 1
+    # Заголовки как у браузера
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'ru-RU,ru;q=0.9,en;q=0.8',
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Origin': 'https://ya7auto.ru',
+        'Referer': 'https://ya7auto.ru/',
+        'Connection': 'keep-alive',
+    }
 
-        # Проверяем GPS
-        gps_match = system['gps'] == answers.get('gps')
+    try:
+        logger.info(f"Отправка данных в CRM: {form_data}")
 
-        # Все три характеристики должны совпадать
-        if autostart_match and control_match and gps_match:
-            perfect_matches.append(system)
+        # Создаем сессию для сохранения куки
+        session = requests.Session()
 
-    # Возвращаем максимум 2 подходящие системы
-    return perfect_matches[:2]
+        # Сначала получаем главную страницу для установки куки
+        session.get('https://ya7auto.ru/', headers=headers, timeout=10)
+
+        # Отправляем POST запрос с данными формы
+        response = session.post(url, data=form_data, headers=headers, timeout=15)
+
+        logger.info(f"Ответ CRM: {response.status_code}")
+
+        # Проверяем успешность по статусу коду
+        if response.status_code == 200:
+            # Дополнительная проверка по содержанию ответа
+            if 'успех' in response.text.lower() or 'success' in response.text.lower():
+                logger.info(f"✅ Данные успешно отправлены в CRM")
+                return True
+            else:
+                logger.warning(f"⚠️ Форма вернула 200, но без явных признаков успеха")
+                # Все равно считаем успехом, так как сервер принял запрос
+                return True
+        else:
+            logger.error(f"❌ Ошибка отправки формы: {response.status_code}")
+            return False
+
+    except Exception as e:
+        logger.error(f"💥 Исключение при отправке в CRM: {str(e)}")
+        return False
 
 
-def start(update: Update, context: CallbackContext) -> int:
+def validate_phone_number(phone):
+    """Проверяет и форматирует номер телефона"""
+    digits = re.sub(r'\D', '', str(phone))
+
+    if len(digits) == 11:
+        if digits.startswith('7'):
+            return f"+7{digits[1:]}"
+        elif digits.startswith('8'):
+            return f"+7{digits[1:]}"
+    elif len(digits) == 10:
+        return f"+7{digits}"
+
+    return None
+
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Начинает опрос, задает первый вопрос."""
     user = update.message.from_user
-    context.user_data['user_name'] = user.first_name or user.username
-    context.user_data['user_answers'] = {}
-
-    update.message.reply_text(f"👋🏻 Привет, {user.first_name}!\n\nЯ помогу тебе выбрать систему на твой автомобиль!")
-    update.message.reply_text("⁉️ Давай решим, что должна уметь сигнализация?")
-    update.message.reply_text("1️⃣ Нужен ли тебе автозапуск?")
-
-    update.message.reply_text(
-        "❄️ В условиях нашего климата необходимо прогревать двигатель перед поездкой. Даже если на улице несильный мороз! Это снижает износ двигателя.\n\n"
-        "В конце концов просто приятно съесть в прогретый автомобиль 😌\n\n"
-        "❓Какую систему выберешь?",
+    await update.message.reply_text(
+        f"👋🏻 Приветствуем, {user.first_name}!\n\n"
+        "Готов помочь подобрать идеальную систему для твоего автомобиля!\n\n"
+        "🦾 Давай определимся с ключевыми функциями\n\n"
+        "☀️ Подавляющее большинство наших клиентов выбирают систему с главной целью — реализовать дистанционный запуск двигателя.\n\n"
+        "В нашем климате прогрев двигателя перед поездкой — это необходимость. Даже при небольшом минусе это значительно снижает износ мотора.\n\n"
+        "Ну и конечно, садиться в уже тёплый и комфортный салон — это просто приятно.\n\n"
+        "Какая функция для вас в приоритете?",
         reply_markup=ReplyKeyboardMarkup(
-            [["😉 С Автозапуском", "🥶 БЕЗ Автозапуска"]],
-            resize_keyboard=True,
-            one_time_keyboard=True
-        )
+            [["С автозапуском", "БЕЗ автозапуска"]],
+            one_time_keyboard=True,
+            resize_keyboard=True
+        ),
     )
-    return AUTO_START
+    return AUTOSTART
 
 
-def autostart_choice(update: Update, context: CallbackContext) -> int:
-    text = update.message.text
-    if text == "😉 С Автозапуском":
-        context.user_data['user_answers']['autostart'] = 1
-    else:
-        context.user_data['user_answers']['autostart'] = 0
+async def autostart_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Обрабатывает выбор автозапуска и задает второй вопрос."""
+    choice = update.message.text
+    user_id = update.message.from_user.id
+    user_data[user_id] = {'autostart': 1 if choice == 'С автозапуском' else 0}
 
-    update.message.reply_text("2️⃣ Как планируешь управлять системой? Брелок или GSM-модуль")
-
-    update.message.reply_text(
-        "Можно управлять через брелок, но проблема в том, что сигнал тревоги от автомобиля до брелка не всегда стабилен и есть шанс не получить сигнал тревоги ⛔️\n\n"
-        "Через приложение в телефоне в независимости от вашего местоположения вы получите сообщение в случае тревоги и сможете отправить команду на автозапуск 👏\n\n"
-        "Что выберете❓",
+    await update.message.reply_text(
+        "📡 Теперь давай выберем способ управления\n\n"
+        "🙄 Есть устаревший метод — управление с брелока сигнализации. Его минус в нестабильном сигнале: есть риск не получить оповещение о тревоге. Поэтому мы рекомендуем более современный вариант — управление со смартфона.\n\n"
+        "☺️ Через мобильное приложение ты сможешь дистанционно открывать и закрывать авто, отслеживать его местоположение и статус, настраивать датчики и многое другое. Главное — ты гарантированно получишь пуш-уведомление о любом происшествии, где бы ты ни был.\n\n"
+        "Как вам удобнее управлять системой?",
         reply_markup=ReplyKeyboardMarkup(
-            [["😎 Приложение в телефоне", "📵 Брелок"]],
-            resize_keyboard=True,
-            one_time_keyboard=True
-        )
+            [["😎 Приложение в телефоне", "📺 Брелок"]],
+            one_time_keyboard=True,
+            resize_keyboard=True
+        ),
     )
     return CONTROL
 
 
-def control_choice(update: Update, context: CallbackContext) -> int:
-    text = update.message.text
-    if text == "😎 Приложение в телефоне":
-        context.user_data['user_answers']['control'] = 1  # GSM управление
-    else:
-        context.user_data['user_answers']['control'] = 0  # Брелок
+async def control_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Обрабатывает выбор управления и задает третий вопрос."""
+    choice = update.message.text
+    user_id = update.message.from_user.id
+    user_data[user_id]['control'] = 'app' if 'Приложение' in choice else 'remote'
 
-    update.message.reply_text("🔥Отлично, остался последний вопрос! 3️⃣ GPS-антенна")
-
-    update.message.reply_text(
-        "🗺️Если вы часто даете машину чужие руки и вам важно отслеживать точное местоположение автомобиля, то вам необходимо выбрать систему с GPS.\n\n"
-        "Ваш вариант❓",
+    await update.message.reply_text(
+        "🔥 Отлично! Мы почти подобрали твою идеальную систему. Остался последний шаг.\n\n"
+        "Если ты часто передаешь ключи другим людям или тебе критично важно отслеживать каждое перемещение автомобиля, то тебе нужна система со встроенным GPS-модулем.\n\n"
+        "Он позволит тебе в реальном времени видеть точное местоположение машины, а в приложении можно будет посмотреть детальный маршрут ее поездки.\n\n"
+        "Нужен ли вам GPS-модуль для отслеживания?",
         reply_markup=ReplyKeyboardMarkup(
-            [["🕵🏻‍♂️ С GPS- антенны", "🙈 БЕЗ GPS- антенны"]],
-            resize_keyboard=True,
-            one_time_keyboard=True
-        )
+            [["Да, нужен GPS", "Нет, не нужен"]],
+            one_time_keyboard=True,
+            resize_keyboard=True
+        ),
     )
     return GPS
 
 
-def gps_choice(update: Update, context: CallbackContext) -> int:
-    text = update.message.text
-    if text == "🕵🏻‍♂️ С GPS- антенны":
-        context.user_data['user_answers']['gps'] = 1
+async def gps_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Обрабатывает выбор GPS, показывает рекомендацию и запрашивает телефон."""
+    choice = update.message.text
+    user_id = update.message.from_user.id
+    user_data[user_id]['gps'] = 1 if 'Да' in choice else 0
+
+    user_prefs = user_data[user_id]
+    recommended_products = []
+
+    # Логика подбора
+    for product in PRODUCTS_DATA:
+        if user_prefs['autostart'] == 1 and product['autostart'] == 0:
+            continue
+        if user_prefs['control'] == 'app' and product['gsm'] == 0:
+            continue
+        if user_prefs['gps'] == 1 and product['gps'] == 0:
+            continue
+
+        recommended_products.append(product)
+        if len(recommended_products) == 2:
+            break
+
+    # Формируем сообщение с рекомендациями
+    if recommended_products:
+        message_text = "Вот отличные варианты для вас:\n\n"
+        for prod in recommended_products:
+            message_text += f"• <a href='{prod['link']}'>{prod['name']}</a>\n"
+        message_text += "\nДля подробного обсуждения и оформления заказа оставьте, пожалуйста, ваш номер телефона. Наш специалист свяжется с вами в ближайшее время."
     else:
-        context.user_data['user_answers']['gps'] = 0
+        message_text = "К сожалению, по вашим запросам не найдено подходящих систем. Оставьте ваш номер телефона, и наш специалист поможет вам с подбором вручную."
 
-    recommended = recommend_systems(context.user_data['user_answers'])
+    await update.message.reply_text(message_text, parse_mode='HTML', disable_web_page_preview=True)
 
-    if not recommended:
-        update.message.reply_text(
-            "❌ К сожалению, нет систем, которые точно соответствуют вашим требованиям.\n\n"
-            "Пожалуйста, свяжитесь с нашим менеджером для индивидуальной консультации 👨🏻‍🔧",
-            reply_markup=ReplyKeyboardMarkup(
-                [["🔄 Начать заново"]],
-                resize_keyboard=True,
-                one_time_keyboard=True
-            )
-        )
-        return RESTART
-
-    answers = context.user_data['user_answers']
-    functionality_text = "🔍 Для вас важно, чтобы сигнализация имела следующий функционал:\n\n"
-
-    if answers.get('autostart') == 1:
-        functionality_text += "• 🚗 Автозапуск двигателя\n"
-    else:
-        functionality_text += "• 🚫 Без автозапуска\n"
-
-    if answers.get('control') == 1:
-        functionality_text += "• 📱 Управление через приложение (GSM)\n"
-    else:
-        functionality_text += "• 📟 Управление через брелок\n"
-
-    if answers.get('gps') == 1:
-        functionality_text += "• 🗺️ GPS-отслеживание\n"
-    else:
-        functionality_text += "• 🚫 Без GPS-отслеживания\n"
-
-    functionality_text += f"\nНашлось {len(recommended)} подходящих систем:\n\n"
-
-    for system in recommended:
-        brand_icon = "🐼" if system['brand'] == 'pandora' or 'pandect' in system['name'].lower() else "⭐"
-
-        characteristics = []
-        if system['autostart'] == 1:
-            characteristics.append("автозапуск")
-        if system['brelok'] == 1:
-            characteristics.append("брелок")
-        if system['gsm'] == 1:
-            characteristics.append("GSM-управление")
-        if system['gps'] == 1:
-            characteristics.append("GPS")
-
-        functionality_text += (
-            f"{brand_icon} <b>{system['name']}</b>\n"
-            f"• Характеристики: {', '.join(characteristics)}\n"
-            f"• Стоимость: {system['price']}\n"
-            f"• Ссылка: {system['link']}\n\n"
-        )
-
-    functionality_text += (
-        "Хочешь узнать стоимость установки на твой авто?💰\n\n"
-        "Оставь номер телефона и наш мастер свяжется с тобой 📞\n\n"
-        "Мы официальные представители Pandora и StarLine в Самаре 👨🏻‍🔧\n\n"
-        "У нас два филиала 🏢 можешь написать нам напрямую ✍🏻\n"
-        "Будем рады помочь\n\n"
-        "📍ул. Фадеева, 51А\n"
-        "@ya7fadeeva_bot\n\n"
-        "📍Московское ш., 16 км, 1А\n"
-        "@ya7moskva_bot"
-    )
-
-    context.user_data['bot_data'] = ", ".join([sys['name'] for sys in recommended])
-
-    update.message.reply_text(functionality_text, parse_mode='HTML', disable_web_page_preview=True)
-    update.message.reply_text(
-        "Пожалуйста, поделитесь вашим номером телефона:",
+    await update.message.reply_text(
+        "Пожалуйста, отправьте ваш номер телефона. Используйте кнопку ниже для удобства.",
         reply_markup=ReplyKeyboardMarkup(
-            [[KeyboardButton("📞 Отправить мой номер", request_contact=True)]],
-            resize_keyboard=True,
-            one_time_keyboard=True
-        )
+            [[KeyboardButton("📞 Отправить мой номер", request_contact=True)], ["Ввести номер вручную"]],
+            one_time_keyboard=True,
+            resize_keyboard=True
+        ),
     )
     return PHONE
 
 
-def get_phone(update: Update, context: CallbackContext) -> int:
-    if update.message.contact:
-        phone_number = update.message.contact.phone_number
-    else:
-        phone_number = update.message.text
+async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Обрабатывает полученный контакт и отправляет его в CRM."""
+    phone_number = None
+    user = update.message.from_user
+    user_name = f"{user.first_name} {user.last_name}" if user.last_name else user.first_name
 
-    form_handler = SimpleFormHandler(FORM_URL)
-    success, message = form_handler.submit_phone_only(phone_number)
+    if update.message.contact:
+        phone_number = validate_phone_number(update.message.contact.phone_number)
+    elif update.message.text == "Ввести номер вручную":
+        await update.message.reply_text(
+            "Пожалуйста, введите ваш номер телефона в формате +7XXX...",
+            reply_markup=ReplyKeyboardMarkup([["Отмена"]], resize_keyboard=True)
+        )
+        return PHONE
+    elif update.message.text != "Отмена":
+        phone_number = validate_phone_number(update.message.text)
+
+    if not phone_number:
+        await update.message.reply_text("Неверный формат номера. Пожалуйста, введите номер в формате +7XXX...")
+        return PHONE
+
+    # Показываем что идет отправка
+    await update.message.reply_text("⌛ Отправляем ваши данные в CRM...")
+
+    # Отправляем в CRM (имя и телефон)
+    success = send_to_crm(phone_number, user_name)
 
     if success:
-        update.message.reply_text(
-            "✅ Спасибо! Ваш номер и данные получены. Наш менеджер свяжется с вами!",
-            reply_markup=ReplyKeyboardMarkup(
-                [["🔄 Выбрать другую систему"]],
-                resize_keyboard=True,
-                one_time_keyboard=True
-            )
+        await update.message.reply_text(
+            "✅ Спасибо! Ваши данные приняты и отправлены менеджеру. Мы свяжемся с вами в ближайшее время!\n\n"
+            "Для нового подбора нажмите /start",
+            reply_markup=ReplyKeyboardMarkup([[]], resize_keyboard=True)
         )
     else:
-        logger.error(f"Ошибка отправки формы: {message}")
-        update.message.reply_text(
-            "✅ Спасибо! Ваш номер принят. Мы свяжемся с вами скоро.",
-            reply_markup=ReplyKeyboardMarkup(
-                [["🔄 Выбрать другую систему"]],
-                resize_keyboard=True,
-                one_time_keyboard=True
-            )
+        await update.message.reply_text(
+            "❌ Произошла ошибка при отправке данных. Пожалуйста, попробуйте позже или свяжитесь с нами по телефону.\n\n"
+            "Для повторной попытки нажмите /start",
+            reply_markup=ReplyKeyboardMarkup([[]], resize_keyboard=True)
         )
 
-    return RESTART
+    return ConversationHandler.END
 
 
-def restart_choice(update: Update, context: CallbackContext) -> int:
-    text = update.message.text
-    if text == "🔄 Начать заново" or text == "🔄 Выбрать другую систему":
-        return start(update, context)
-
-    update.message.reply_text(
-        "Для начала выбора системы отправьте /start",
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Отменяет опрос."""
+    await update.message.reply_text(
+        'Диалог прерван. Если нужна помощь, начните заново с /start.',
         reply_markup=ReplyKeyboardMarkup([[]], resize_keyboard=True)
     )
     return ConversationHandler.END
 
 
-def cancel(update: Update, context: CallbackContext) -> int:
-    update.message.reply_text(
-        'Диалог прерван. Чтобы начать заново, отправьте /start',
-        reply_markup=ReplyKeyboardMarkup([[]], resize_keyboard=True)
-    )
-    context.user_data.clear()
-    return ConversationHandler.END
+async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Обрабатывает ошибки."""
+    logger.error("Ошибка:", exc_info=context.error)
 
 
 def main() -> None:
-    updater = Updater(BOT_TOKEN, use_context=True)
-    dp = updater.dispatcher
+    """Запускает бота в polling режиме"""
+    logger.info("🚀 Запуск бота в polling режиме...")
 
+    # Создаем Application с обработкой конфликтов
+    application = Application.builder() \
+        .token(BOT_TOKEN) \
+        .read_timeout(30) \
+        .write_timeout(30) \
+        .connect_timeout(30) \
+        .pool_timeout(30) \
+        .build()
+
+    application.add_error_handler(error_handler)
+
+    # Обработчик диалога
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
-            AUTO_START: [MessageHandler(Filters.text & ~Filters.command, autostart_choice)],
-            CONTROL: [MessageHandler(Filters.text & ~Filters.command, control_choice)],
-            GPS: [MessageHandler(Filters.text & ~Filters.command, gps_choice)],
+            AUTOSTART: [MessageHandler(filters.Regex("^(С автозапуском|БЕЗ автозапуска)$"), autostart_choice)],
+            CONTROL: [MessageHandler(filters.Regex("^(😎 Приложение в телефоне|📺 Брелок)$"), control_choice)],
+            GPS: [MessageHandler(filters.Regex("^(Да, нужен GPS|Нет, не нужен)$"), gps_choice)],
             PHONE: [
-                MessageHandler(Filters.contact, get_phone),
-                MessageHandler(Filters.text & ~Filters.command, get_phone)
+                MessageHandler(filters.CONTACT, get_phone),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, get_phone)
             ],
-            RESTART: [MessageHandler(Filters.text & ~Filters.command, restart_choice)],
         },
         fallbacks=[CommandHandler('cancel', cancel)],
     )
 
-    dp.add_handler(conv_handler)
-    updater.start_polling()
-    updater.idle()
+    application.add_handler(conv_handler)
+
+    # Запускаем polling с обработкой ошибок
+    logger.info("✅ Бот запущен и ожидает сообщений...")
+
+    try:
+        application.run_polling(
+            drop_pending_updates=True,  # Игнорирует старые сообщения при запуске
+            allowed_updates=Update.ALL_TYPES,
+            close_loop=False
+        )
+    except Conflict as e:
+        logger.error(f"⚠️ Конфликт: другой экземпляр бота уже запущен. {e}")
+        logger.info("🔄 Перезапуск через 10 секунд...")
+        asyncio.run(asyncio.sleep(10))
+        main()  # Рекурсивный перезапуск
+    except Exception as e:
+        logger.error(f"💥 Критическая ошибка: {e}")
+        raise
 
 
 if __name__ == '__main__':
